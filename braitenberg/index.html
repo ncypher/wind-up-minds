@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Braitenberg Vehicles — Wind-Up Minds</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,800&family=IBM+Plex+Mono:wght@400;600&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#14110f; --ink:#f3e9dc; --muted:#a8998a; --panel:rgba(30,25,22,.86);
+    --line:rgba(243,233,220,.14); --warm:#ffcf6b; --fear:#6fc3ff; --aggr:#ff6b5e;
+    --love:#ff9ed2; --expl:#8be38b;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:Inter,system-ui,sans-serif;overflow:hidden}
+  canvas{display:block;position:fixed;inset:0;width:100vw;height:100vh;touch-action:none;cursor:crosshair}
+  .panel{position:fixed;background:var(--panel);border:1px solid var(--line);border-radius:14px;backdrop-filter:blur(8px);padding:14px 16px}
+  #intro{top:14px;left:14px;width:330px;max-width:calc(100vw - 28px)}
+  h1{font-family:Fraunces,serif;font-weight:800;font-size:26px;margin:0 0 4px;letter-spacing:-.3px}
+  h1 small{display:block;font:600 11px "IBM Plex Mono",monospace;letter-spacing:2px;color:var(--warm);text-transform:uppercase;margin-bottom:6px}
+  p{margin:6px 0;font-size:13px;line-height:1.5;color:var(--muted)}
+  p b{color:var(--ink)}
+  .row{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  button{font:600 12px Inter,sans-serif;color:var(--ink);background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:999px;padding:7px 11px;cursor:pointer;transition:.15s}
+  button:hover{background:rgba(255,255,255,.14)}
+  button .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:1px}
+  button.on{background:var(--warm);color:#1b1510;border-color:var(--warm)}
+  #inspector{bottom:14px;left:14px;width:330px;max-width:calc(100vw - 28px)}
+  #inspector h2{font-family:Fraunces,serif;font-size:19px;margin:0 0 2px}
+  #inspector .mono{font:12px "IBM Plex Mono",monospace;color:var(--muted)}
+  #wiring{display:block;margin:10px auto 4px}
+  .toggle{display:flex;gap:6px;margin-top:8px}
+  .toggle button{flex:1}
+  .hint{position:fixed;right:14px;bottom:14px;font:12px "IBM Plex Mono",monospace;color:var(--muted);text-align:right;line-height:1.7;pointer-events:none}
+  #collapse{position:absolute;top:10px;right:10px;padding:3px 9px}
+  #intro.min p,#intro.min .row.extra{display:none}
+  a{color:var(--warm)}
+  @media (max-width:700px){ .hint{display:none} #inspector{bottom:8px;left:8px} #intro{top:8px;left:8px} }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div class="panel" id="intro">
+  <button id="collapse" title="Collapse">–</button>
+  <h1><small>Wind-Up Minds · 01</small>Braitenberg Vehicles</h1>
+  <p>Each cart has <b>two light sensors</b> and <b>two wheels</b>, joined by two wires. That's the whole brain. No code decides what to do.</p>
+  <p>Wire them <b>straight</b> and it runs from light. <b>Cross</b> them and it charges. Make the wires <b>slow</b> the wheel instead of speeding it, and you get something that looks like <b>love</b>.</p>
+  <div class="row">
+    <button data-add="fear"><span class="dot" style="background:var(--fear)"></span>Fear</button>
+    <button data-add="aggression"><span class="dot" style="background:var(--aggr)"></span>Aggression</button>
+    <button data-add="love"><span class="dot" style="background:var(--love)"></span>Love</button>
+    <button data-add="explorer"><span class="dot" style="background:var(--expl)"></span>Explorer</button>
+  </div>
+  <div class="row extra">
+    <button id="addLight">+ Light</button>
+    <button id="trails" class="on">Trails</button>
+    <button id="pause">Pause</button>
+    <button id="reset">Reset</button>
+  </div>
+  <p style="margin-top:10px">After Valentino Braitenberg, <i>Vehicles: Experiments in Synthetic Psychology</i> (1984).</p>
+</div>
+
+<div class="panel" id="inspector">
+  <h2 id="iname">Click a vehicle</h2>
+  <div class="mono" id="isub">to open its brain and rewire it</div>
+  <svg id="wiring" width="220" height="150" viewBox="0 0 220 150"></svg>
+  <div class="toggle">
+    <button id="tCross">Straight wires</button>
+    <button id="tSign">Excite (+)</button>
+  </div>
+  <div class="toggle">
+    <button id="tRemove">Remove vehicle</button>
+  </div>
+</div>
+
+<div class="hint">drag a light to move it<br>double-click empty space to add a light<br>click a vehicle to rewire it</div>
+
+<script>
+(() => {
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+let W, H, DPR;
+function resize(){ DPR = Math.min(2, window.devicePixelRatio||1); W = innerWidth; H = innerHeight; cv.width = W*DPR; cv.height = H*DPR; ctx.setTransform(DPR,0,0,DPR,0,0); trailCanvas.width=W*DPR; trailCanvas.height=H*DPR; tctx.setTransform(DPR,0,0,DPR,0,0); }
+const trailCanvas = document.createElement('canvas'), tctx = trailCanvas.getContext('2d');
+addEventListener('resize', resize);
+
+const COLORS = {fear:'#6fc3ff', aggression:'#ff6b5e', love:'#ff9ed2', explorer:'#8be38b'};
+const TYPES = {
+  fear:{cross:false, sign:+1, blurb:'Straight + excitatory. The side nearer the light spins faster, so it turns away and flees.'},
+  aggression:{cross:true, sign:+1, blurb:'Crossed + excitatory. The far wheel spins faster, so it turns toward the light and rams it.'},
+  love:{cross:false, sign:-1, blurb:'Straight + inhibitory. Light slows the near wheel, so it turns toward the light, slows down, and settles facing it.'},
+  explorer:{cross:true, sign:-1, blurb:'Crossed + inhibitory. It slows near light but turns away, drifting off to look for the next one.'},
+};
+function typeOf(v){ for(const [k,t] of Object.entries(TYPES)) if(t.cross===v.cross && t.sign===v.sign) return k; }
+
+let lights = [], vehicles = [], selected = null, paused = false, trailsOn = true;
+
+function addLight(x,y){ lights.push({x:x??(W*0.3+Math.random()*W*0.5), y:y??(H*0.25+Math.random()*H*0.5), s:1, phase:Math.random()*6}); }
+function addVehicle(type, x, y){
+  const t = TYPES[type];
+  const v = {x:x??Math.random()*W, y:y??Math.random()*H, th:Math.random()*Math.PI*2, cross:t.cross, sign:t.sign,
+    sl:0, sr:0, wl:0, wr:0, key:0, id:Math.random()};
+  vehicles.push(v); return v;
+}
+function reset(){
+  lights=[]; vehicles=[]; selected=null;
+  addLight(W*0.58,H*0.42); addLight(W*0.8,H*0.72);
+  ['fear','aggression','love','explorer','love','aggression'].forEach(t=>addVehicle(t));
+  tctx.clearRect(0,0,W,H); updateInspector();
+}
+
+// --- the entire "brain" ---
+const R = 16, AXLE = 22, EYE_ANG = 0.55;
+function sense(px, py, facing){
+  let s = 0;
+  for(const L of lights){
+    const dx = L.x-px, dy = L.y-py, d2 = dx*dx+dy*dy;
+    const ang = Math.atan2(dy,dx) - facing;
+    const dir = 0.35 + 0.65*Math.max(0, Math.cos(ang));      // eyes see best straight ahead
+    s += L.s * dir / (1 + d2/(110*110));
+  }
+  return Math.min(1.6, s);
+}
+function step(v, dt){
+  const lx = v.x + Math.cos(v.th-EYE_ANG)*R, ly = v.y + Math.sin(v.th-EYE_ANG)*R;
+  const rx = v.x + Math.cos(v.th+EYE_ANG)*R, ry = v.y + Math.sin(v.th+EYE_ANG)*R;
+  v.sl = sense(lx,ly,v.th-EYE_ANG*1.6); v.sr = sense(rx,ry,v.th+EYE_ANG*1.6);
+  // the wires
+  const toLeftWheel  = v.cross ? v.sr : v.sl;
+  const toRightWheel = v.cross ? v.sl : v.sr;
+  if(v.sign>0){ v.wl = 0.25 + 3.2*toLeftWheel; v.wr = 0.25 + 3.2*toRightWheel; }
+  else        { v.wl = 2.4*Math.max(0, 1 - 1.7*toLeftWheel); v.wr = 2.4*Math.max(0, 1 - 1.7*toRightWheel); }
+  // a little wobble, like a real cheap motor
+  v.wl *= 1 + (Math.random()-.5)*0.08; v.wr *= 1 + (Math.random()-.5)*0.08;
+  const speed = (v.wl+v.wr)/2, turn = (v.wl - v.wr)/AXLE;
+  v.th += turn*dt*60*0.9;
+  v.x += Math.cos(v.th)*speed*dt*60; v.y += Math.sin(v.th)*speed*dt*60;
+  v.key += speed*dt*4;
+  const m = 20;
+  if(v.x<-m) v.x=W+m; if(v.x>W+m) v.x=-m; if(v.y<-m) v.y=H+m; if(v.y>H+m) v.y=-m;
+}
+
+// --- drawing ---
+function drawLight(L, t){
+  const pulse = 1 + Math.sin(t*2 + L.phase)*0.04;
+  const g = ctx.createRadialGradient(L.x,L.y,0,L.x,L.y,260*pulse);
+  g.addColorStop(0,'rgba(255,214,120,.55)'); g.addColorStop(.25,'rgba(255,190,90,.18)'); g.addColorStop(1,'rgba(255,170,60,0)');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(L.x,L.y,260*pulse,0,7); ctx.fill();
+  ctx.fillStyle='#fff3cf'; ctx.beginPath(); ctx.arc(L.x,L.y,11,0,7); ctx.fill();
+  ctx.strokeStyle='rgba(255,230,170,.7)'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(L.x,L.y,16,0,7); ctx.stroke();
+}
+function drawVehicle(v){
+  const col = COLORS[typeOf(v)];
+  ctx.save(); ctx.translate(v.x,v.y); ctx.rotate(v.th);
+  if(v===selected){ ctx.strokeStyle='rgba(255,255,255,.55)'; ctx.setLineDash([4,4]); ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(0,0,30,0,7); ctx.stroke(); ctx.setLineDash([]); }
+  // wheels (y = -left / +right in local space)
+  ctx.fillStyle='#2a2320';
+  [-1,1].forEach(s=>{ ctx.save(); ctx.translate(-3, s*12); ctx.fillRect(-7,-3.5,14,7);
+    ctx.strokeStyle='rgba(255,255,255,.25)'; ctx.lineWidth=1; const sp=(s<0?v.wl:v.wr);
+    for(let i=0;i<3;i++){ const x=((v.key*sp*3 + i*5)%14)-7; ctx.beginPath(); ctx.moveTo(x,-3.5); ctx.lineTo(x,3.5); ctx.stroke(); }
+    ctx.restore(); });
+  // body
+  ctx.fillStyle=col; roundRect(-12,-10,24,20,6); ctx.fill();
+  ctx.fillStyle='rgba(0,0,0,.18)'; roundRect(-12,2,24,8,4); ctx.fill();
+  // wires on the body
+  ctx.strokeStyle='rgba(20,15,12,.85)'; ctx.lineWidth=1.6;
+  const eyeL=[10,-6], eyeR=[10,6], whL=[-3,-9], whR=[-3,9];
+  ctx.beginPath();
+  if(v.cross){ ctx.moveTo(...eyeL); ctx.lineTo(...whR); ctx.moveTo(...eyeR); ctx.lineTo(...whL); }
+  else { ctx.moveTo(...eyeL); ctx.lineTo(...whL); ctx.moveTo(...eyeR); ctx.lineTo(...whR); }
+  ctx.stroke();
+  // eyes glow with what they sense
+  [[eyeL,v.sl],[eyeR,v.sr]].forEach(([p,s])=>{
+    ctx.fillStyle=`rgba(255,240,190,${0.25+Math.min(1,s)*0.75})`; ctx.beginPath(); ctx.arc(p[0]+3,p[1],4,0,7); ctx.fill();
+    ctx.fillStyle='#1b1510'; ctx.beginPath(); ctx.arc(p[0]+4,p[1],1.6,0,7); ctx.fill(); });
+  // wind-up key on the back, turns with speed
+  ctx.save(); ctx.translate(-15,0); ctx.rotate(v.key);
+  ctx.strokeStyle='#d9c7a8'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(0,-6); ctx.lineTo(0,6); ctx.stroke();
+  ctx.fillStyle='#d9c7a8'; ctx.beginPath(); ctx.ellipse(0,-7,3,4,0,0,7); ctx.ellipse(0,7,3,4,0,0,7); ctx.fill();
+  ctx.restore();
+  ctx.restore();
+}
+function roundRect(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+
+let last = performance.now(), t0 = last;
+function frame(now){
+  const dt = Math.min(0.05,(now-last)/1000); last = now; const t=(now-t0)/1000;
+  if(!paused) for(const v of vehicles){ const ox=v.x, oy=v.y; step(v,dt);
+    if(trailsOn && Math.hypot(v.x-ox,v.y-oy)<40){ tctx.strokeStyle=COLORS[typeOf(v)]+'55'; tctx.lineWidth=1.4; tctx.beginPath(); tctx.moveTo(ox,oy); tctx.lineTo(v.x,v.y); tctx.stroke(); } }
+  // fade trails slowly
+  if(!paused){ tctx.globalCompositeOperation='destination-out'; tctx.fillStyle='rgba(0,0,0,0.012)'; tctx.fillRect(0,0,W,H); tctx.globalCompositeOperation='source-over'; }
+  ctx.fillStyle='#14110f'; ctx.fillRect(0,0,W,H);
+  // faint grid
+  ctx.strokeStyle='rgba(255,255,255,.025)'; ctx.lineWidth=1;
+  for(let x=0;x<W;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
+  for(let y=0;y<H;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+  ctx.globalCompositeOperation='lighter'; lights.forEach(L=>drawLight(L,t)); ctx.globalCompositeOperation='source-over';
+  ctx.drawImage(trailCanvas,0,0,W,H);
+  vehicles.forEach(drawVehicle);
+  if(selected) drawWiringLive();
+  requestAnimationFrame(frame);
+}
+
+// --- inspector ---
+const svg = document.getElementById('wiring');
+function updateInspector(){
+  const has = !!selected;
+  document.getElementById('tCross').disabled = document.getElementById('tSign').disabled = document.getElementById('tRemove').disabled = !has;
+  if(!has){ document.getElementById('iname').textContent='Click a vehicle'; document.getElementById('isub').textContent='to open its brain and rewire it'; svg.innerHTML=''; svg.style.display='none'; return; }
+  svg.style.display='block';
+  const k = typeOf(selected);
+  document.getElementById('iname').innerHTML = `<span style="color:${COLORS[k]}">${k[0].toUpperCase()+k.slice(1)}</span>`;
+  document.getElementById('isub').textContent = TYPES[k].blurb;
+  document.getElementById('tCross').textContent = selected.cross ? 'Crossed wires' : 'Straight wires';
+  document.getElementById('tSign').textContent = selected.sign>0 ? 'Excite (+)' : 'Inhibit (−)';
+}
+function drawWiringLive(){
+  const v = selected, col = COLORS[typeOf(v)];
+  const eyeL=[60,30], eyeR=[160,30], whL=[60,122], whR=[160,122];
+  const wire = (a,b,s)=>`<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="${v.sign>0?'#ffcf6b':'#8ab4ff'}" stroke-width="${2+s*5}" stroke-linecap="round" opacity="${.35+Math.min(1,s)*.65}"/>`;
+  const lw = v.cross ? [eyeR,whL,v.sr] : [eyeL,whL,v.sl];
+  const rw = v.cross ? [eyeL,whR,v.sl] : [eyeR,whR,v.sr];
+  const wheel=(p,sp)=>`<rect x="${p[0]-14}" y="${p[1]-9}" width="28" height="18" rx="4" fill="#2a2320" stroke="rgba(255,255,255,.2)"/><text x="${p[0]}" y="${p[1]+26}" text-anchor="middle" font-size="10" font-family="IBM Plex Mono" fill="#a8998a">${sp.toFixed(2)}</text>`;
+  const eye=(p,s,label)=>`<circle cx="${p[0]}" cy="${p[1]}" r="11" fill="rgba(255,240,190,${.15+Math.min(1,s)*.85})" stroke="#d9c7a8"/><text x="${p[0]}" y="${p[1]-17}" text-anchor="middle" font-size="10" font-family="IBM Plex Mono" fill="#a8998a">${label} ${s.toFixed(2)}</text>`;
+  svg.innerHTML = `<rect x="30" y="14" width="160" height="122" rx="16" fill="${col}22" stroke="${col}66"/>`
+    + wire(lw[0],lw[1],lw[2]) + wire(rw[0],rw[1],rw[2])
+    + `<text x="110" y="80" text-anchor="middle" font-size="22" font-family="Fraunces" fill="${v.sign>0?'#ffcf6b':'#8ab4ff'}">${v.sign>0?'+':'−'}</text>`
+    + eye(eyeL,v.sl,'L') + eye(eyeR,v.sr,'R') + wheel(whL,v.wl) + wheel(whR,v.wr);
+}
+document.getElementById('tCross').onclick=()=>{ if(selected){ selected.cross=!selected.cross; updateInspector(); } };
+document.getElementById('tSign').onclick=()=>{ if(selected){ selected.sign*=-1; updateInspector(); } };
+document.getElementById('tRemove').onclick=()=>{ if(selected){ vehicles=vehicles.filter(v=>v!==selected); selected=null; updateInspector(); } };
+
+// --- controls ---
+document.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>{ selected = addVehicle(b.dataset.add); updateInspector(); });
+document.getElementById('addLight').onclick=()=>addLight();
+document.getElementById('trails').onclick=e=>{ trailsOn=!trailsOn; e.currentTarget.classList.toggle('on',trailsOn); if(!trailsOn) tctx.clearRect(0,0,W,H); };
+document.getElementById('pause').onclick=e=>{ paused=!paused; e.currentTarget.textContent=paused?'Play':'Pause'; e.currentTarget.classList.toggle('on',paused); };
+document.getElementById('reset').onclick=reset;
+document.getElementById('collapse').onclick=e=>{ const p=document.getElementById('intro'); p.classList.toggle('min'); e.currentTarget.textContent=p.classList.contains('min')?'+':'–'; };
+
+let drag=null, downAt=null;
+function pt(e){ return {x:e.clientX, y:e.clientY}; }
+cv.addEventListener('pointerdown', e=>{
+  const p=pt(e); downAt=p;
+  const L = lights.find(L=>Math.hypot(L.x-p.x,L.y-p.y)<26);
+  if(L){ drag=L; cv.setPointerCapture(e.pointerId); return; }
+  const v = vehicles.find(v=>Math.hypot(v.x-p.x,v.y-p.y)<24);
+  selected = v||null; updateInspector();
+});
+cv.addEventListener('pointermove', e=>{ if(drag){ const p=pt(e); drag.x=p.x; drag.y=p.y; } else { const p=pt(e); cv.style.cursor = lights.some(L=>Math.hypot(L.x-p.x,L.y-p.y)<26)?'grab':(vehicles.some(v=>Math.hypot(v.x-p.x,v.y-p.y)<24)?'pointer':'crosshair'); } });
+cv.addEventListener('pointerup', ()=>{ drag=null; });
+cv.addEventListener('dblclick', e=>{ const p=pt(e); if(!vehicles.some(v=>Math.hypot(v.x-p.x,v.y-p.y)<24)) addLight(p.x,p.y); });
+
+resize(); reset(); requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

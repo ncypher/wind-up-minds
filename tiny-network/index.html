@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A Tiny Network Learning — Wind-Up Minds</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,800&family=IBM+Plex+Mono:wght@400;600&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root{ --bg:#111218; --ink:#eceaf4; --muted:#9a98ab; --panel:#181a22; --line:rgba(236,234,244,.12);
+         --a:#ff9f5a; --b:#5ab4ff; --warm:#ffcf6b; --ok:#8be38b; }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,system-ui,sans-serif}
+  body{display:grid;grid-template-columns:minmax(0,1fr) 440px;min-height:100vh}
+  #left{position:relative;display:flex;align-items:center;justify-content:center;padding:18px}
+  #field{width:min(100%, calc(100vh - 36px));aspect-ratio:1;border-radius:16px;box-shadow:0 0 0 1px var(--line);background:#0c0d12;touch-action:none;cursor:crosshair}
+  aside{background:var(--panel);border-left:1px solid var(--line);padding:16px 18px 30px;overflow:auto;max-height:100vh}
+  h1{font-family:Fraunces,serif;font-weight:800;font-size:26px;margin:0 0 4px}
+  h1 small{display:block;font:600 11px "IBM Plex Mono",monospace;letter-spacing:2px;color:var(--warm);text-transform:uppercase;margin-bottom:6px}
+  p{margin:6px 0;font-size:13px;line-height:1.55;color:var(--muted)} p b{color:var(--ink)}
+  .badge{display:inline-flex;align-items:center;gap:8px;font:600 11.5px "IBM Plex Mono",monospace;padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid var(--line);margin:8px 0 4px}
+  .badge .pulse{width:8px;height:8px;border-radius:50%;background:var(--warm);animation:p 1s infinite alternate}
+  .badge.ok .pulse{background:var(--ok);animation:none} .badge.js .pulse{background:var(--b);animation:none}
+  @keyframes p{to{opacity:.25}}
+  .group{margin-top:12px} .group label{display:block;font:600 10.5px "IBM Plex Mono",monospace;letter-spacing:1.5px;color:#76748a;text-transform:uppercase;margin-bottom:5px}
+  .row{display:flex;flex-wrap:wrap;gap:6px}
+  button{font:600 12px Inter,sans-serif;color:var(--ink);background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:999px;padding:7px 12px;cursor:pointer}
+  button:hover{background:rgba(255,255,255,.14)} button.on{background:var(--warm);color:#1b1510;border-color:var(--warm)}
+  button.big{padding:9px 18px;font-size:13px} button:disabled{opacity:.4;cursor:default}
+  input[type=range]{width:100%;accent-color:var(--warm)}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:12px}
+  .stat{background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:10px;padding:8px}
+  .stat b{display:block;font:600 17px "IBM Plex Mono",monospace;color:var(--ink)} .stat span{font:10px "IBM Plex Mono",monospace;color:var(--muted);text-transform:uppercase;letter-spacing:1px}
+  canvas.chart{width:100%;display:block;border-radius:10px;background:rgba(0,0,0,.25);margin-top:6px}
+  details{margin-top:14px;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:rgba(0,0,0,.18)}
+  summary{cursor:pointer;font-weight:600;font-size:13px}
+  textarea{width:100%;height:340px;margin-top:8px;background:#0c0d12;color:#d9d6e8;border:1px solid var(--line);border-radius:8px;font:11.5px/1.5 "IBM Plex Mono",monospace;padding:10px;resize:vertical;tab-size:4}
+  #err{font:11px "IBM Plex Mono",monospace;color:#ff8a80;white-space:pre-wrap;margin-top:6px}
+  .legend{display:flex;gap:14px;font:11px "IBM Plex Mono",monospace;color:var(--muted);margin-top:6px}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:50%;vertical-align:-1px;margin-right:5px}
+  .hint{position:absolute;left:28px;bottom:26px;font:12px "IBM Plex Mono",monospace;color:var(--muted);pointer-events:none;text-shadow:0 1px 3px #000}
+  a{color:var(--warm)}
+  @media (max-width:950px){ body{grid-template-columns:1fr} aside{max-height:none;border-left:0;border-top:1px solid var(--line)} #field{width:100%} }
+</style>
+</head>
+<body>
+<div id="left">
+  <canvas id="field"></canvas>
+  <div class="hint">click to add an orange point · shift-click (or right-click) for blue</div>
+</div>
+<aside>
+  <h1><small>Wind-Up Minds · 03</small>A Tiny Network, Learning</h1>
+  <p>Orange dots and blue dots. A small neural network has to learn which side of the board belongs to which color. The background is its current guess, redrawn every step as it learns.</p>
+  <p>The engine is <b>about 120 lines of plain Python</b>, with no numpy and no torch. It runs <b>right here in your browser</b> on Pyodide, a build of Python compiled to WebAssembly. Every number remembers where it came from, so when the guess is wrong, the blame flows backward and each weight nudges itself.</p>
+  <div id="badge" class="badge"><span class="pulse"></span><span id="badgeText">Loading Python into your browser…</span></div>
+
+  <div class="group"><label>Puzzle</label>
+    <div class="row" id="datasets">
+      <button data-ds="moons" class="on">Moons</button><button data-ds="circles">Circles</button><button data-ds="xor">XOR</button><button data-ds="spiral">Spiral</button>
+    </div></div>
+  <div class="group"><label>Brain size: neurons per layer × layers</label>
+    <div class="row" id="sizes">
+      <button data-h="[4]">4</button><button data-h="[8]">8</button><button data-h="[8,8]" class="on">8 × 2</button><button data-h="[12,12]">12 × 2</button><button data-h="[16,16]">16 × 2</button>
+    </div></div>
+  <div class="group"><label>Learning rate: <span id="lrv">0.10</span></label>
+    <input type="range" id="lr" min="0.01" max="0.5" step="0.01" value="0.1"></div>
+  <div class="group row">
+    <button id="train" class="big" disabled>▶ Train</button><button id="stepOnce" disabled>Step once</button><button id="reset" disabled>New brain</button>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><b id="sStep">0</b><span>steps</span></div>
+    <div class="stat"><b id="sLoss">—</b><span>loss</span></div>
+    <div class="stat"><b id="sAcc">—</b><span>correct</span></div>
+    <div class="stat"><b id="sParams">—</b><span>weights</span></div>
+  </div>
+  <canvas class="chart" id="lossChart" height="80"></canvas>
+  <div class="legend"><span>loss over time: how wrong it is, going down means learning</span></div>
+
+  <div class="group"><label>The brain itself</label></div>
+  <canvas class="chart" id="net" height="190"></canvas>
+  <div class="legend"><span><i style="background:var(--a)"></i>positive weight</span><span><i style="background:var(--b)"></i>negative weight</span><span>thicker = stronger</span></div>
+
+  <details id="codeBox">
+    <summary>🐍 Read (or edit) the Python. It's the whole engine</summary>
+    <textarea id="code" spellcheck="false"># A whole neural network, from scratch, in plain Python.
+# After Andrej Karpathy&#x27;s micrograd. No numpy, no torch: just numbers that remember
+# where they came from, so they can pass blame backward.
+import random, math, json
+
+class Value:
+    &quot;&quot;&quot;One number, plus the gradient: how much the loss would change if this number nudged up.&quot;&quot;&quot;
+    def __init__(self, data, _children=()):
+        self.data = data
+        self.grad = 0.0
+        self._backward = lambda: None
+        self._prev = _children
+
+    def __add__(self, other):
+        other = other if isinstance(other, Value) else Value(other)
+        out = Value(self.data + other.data, (self, other))
+        def _backward():
+            self.grad += out.grad
+            other.grad += out.grad
+        out._backward = _backward
+        return out
+
+    def __mul__(self, other):
+        other = other if isinstance(other, Value) else Value(other)
+        out = Value(self.data * other.data, (self, other))
+        def _backward():
+            self.grad += other.data * out.grad
+            other.grad += self.data * out.grad
+        out._backward = _backward
+        return out
+
+    def relu(self):
+        out = Value(self.data if self.data &gt; 0 else 0.0, (self,))
+        def _backward():
+            self.grad += (out.data &gt; 0) * out.grad
+        out._backward = _backward
+        return out
+
+    def backward(self):
+        # walk the graph backward and hand each number its share of the blame
+        order, seen = [], set()
+        def build(v):
+            if v not in seen:
+                seen.add(v)
+                for child in v._prev:
+                    build(child)
+                order.append(v)
+        build(self)
+        self.grad = 1.0
+        for v in reversed(order):
+            v._backward()
+
+    __radd__ = __add__
+    __rmul__ = __mul__
+    def __neg__(self): return self * -1
+    def __sub__(self, other): return self + (-other)
+
+
+class Neuron:
+    def __init__(self, n_in, linear=False):
+        self.w = [Value(random.uniform(-1, 1)) for _ in range(n_in)]
+        self.b = Value(0.0)
+        self.linear = linear
+    def __call__(self, x):
+        act = sum((wi * xi for wi, xi in zip(self.w, x)), self.b)
+        return act if self.linear else act.relu()
+    def parameters(self): return self.w + [self.b]
+
+
+class Layer:
+    def __init__(self, n_in, n_out, linear=False):
+        self.neurons = [Neuron(n_in, linear) for _ in range(n_out)]
+    def __call__(self, x):
+        out = [n(x) for n in self.neurons]
+        return out[0] if len(out) == 1 else out
+    def parameters(self): return [p for n in self.neurons for p in n.parameters()]
+
+
+class MLP:
+    def __init__(self, n_in, hidden):
+        sizes = [n_in] + hidden + [1]
+        self.layers = [Layer(sizes[i], sizes[i + 1], linear=(i == len(sizes) - 2))
+                       for i in range(len(sizes) - 1)]
+    def __call__(self, x):
+        for layer in self.layers:
+            x = layer(x)
+        return x
+    def parameters(self): return [p for l in self.layers for p in l.parameters()]
+
+
+# ---------------- training ----------------
+model, X, Y = None, [], []
+
+def setup(points_json, hidden_json, seed):
+    global model, X, Y
+    random.seed(seed)
+    pts = json.loads(points_json)
+    X = [(p[0], p[1]) for p in pts]
+    Y = [p[2] for p in pts]                  # labels are +1 or -1
+    model = MLP(2, json.loads(hidden_json))
+    return len(model.parameters())
+
+def train_step(lr, batch_size):
+    idx = random.sample(range(len(X)), min(batch_size, len(X)))
+    scores = [model([Value(X[i][0]), Value(X[i][1])]) for i in idx]
+    # &quot;max-margin&quot; loss: zero once a point is on the right side by a margin of 1
+    losses = [(1 + -Y[i] * s).relu() for i, s in zip(idx, scores)]
+    data_loss = sum(losses) * (1.0 / len(losses))
+    reg_loss = 1e-4 * sum(p * p for p in model.parameters())
+    loss = data_loss + reg_loss
+    for p in model.parameters():
+        p.grad = 0.0
+    loss.backward()
+    for p in model.parameters():
+        p.data -= lr * p.grad                 # the entire learning rule
+    acc = sum((Y[i] &gt; 0) == (s.data &gt; 0) for i, s in zip(idx, scores)) / len(idx)
+    weights = [[[[w.data for w in n.w], n.b.data] for n in l.neurons] for l in model.layers]
+    return json.dumps({&quot;loss&quot;: loss.data, &quot;acc&quot;: acc, &quot;weights&quot;: weights})
+</textarea>
+    <div class="row" style="margin-top:6px"><button id="runCode">Run my edits</button><button id="resetCode">Restore original</button></div>
+    <div id="err"></div>
+  </details>
+  <p style="margin-top:14px">Engine after Andrej Karpathy's <a href="https://github.com/karpathy/micrograd" target="_blank" rel="noopener">micrograd</a>.</p>
+</aside>
+
+<script>
+(() => {
+const PYODIDE = 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/';
+const ORIGINAL_CODE = document.getElementById('code').value;
+const $ = id => document.getElementById(id);
+
+// ---------------- data ----------------
+function rng(seed){ return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function gauss(r){ return Math.sqrt(-2*Math.log(r()+1e-9))*Math.cos(6.2832*r()); }
+function makeData(kind, seed=3){
+  const r = rng(seed), P = [];
+  if(kind==='moons') for(let i=0;i<100;i++){ const t=Math.PI*r(); i%2 ? P.push([Math.cos(t)-.5+gauss(r)*.1, Math.sin(t)-.25+gauss(r)*.1, 1]) : P.push([.5-Math.cos(t)+gauss(r)*.1, .25-Math.sin(t)+gauss(r)*.1-.0, -1]); }
+  if(kind==='circles') for(let i=0;i<110;i++){ const t=6.2832*r(), inner=i%2, rad=(inner?.45:1.15)+gauss(r)*.09; P.push([Math.cos(t)*rad, Math.sin(t)*rad, inner?1:-1]); }
+  if(kind==='xor') for(let i=0;i<100;i++){ const x=(r()*2-1)*1.3, y=(r()*2-1)*1.3; if(Math.abs(x)<.08||Math.abs(y)<.08){i--;continue;} P.push([x,y, x*y>0?1:-1]); }
+  if(kind==='spiral') for(let i=0;i<120;i++){ const arm=i%2, t=(i/2)/60*3.2+.25, rad=t/3.45*1.4; const a=t*2.1+arm*Math.PI; P.push([Math.cos(a)*rad+gauss(r)*.04, Math.sin(a)*rad+gauss(r)*.04, arm?1:-1]); }
+  return P;
+}
+
+// ---------------- state ----------------
+let points = makeData('moons'), hidden = [8,8], weights = null, step = 0, losses = [], running = false, busy = false;
+let engine = null;   // 'py' or 'js'
+const lr = () => parseFloat($('lr').value);
+
+// forward pass in JS, used only for drawing the background from the current weights
+function forward(x, y){
+  let a = [x, y];
+  for(let li=0; li<weights.length; li++){
+    const L = weights[li], out = new Array(L.length);
+    for(let n=0;n<L.length;n++){ let s=L[n][1]; const w=L[n][0]; for(let k=0;k<w.length;k++) s+=w[k]*a[k]; out[n] = li===weights.length-1 ? s : Math.max(0,s); }
+    a = out;
+  }
+  return a[0];
+}
+
+// ---------------- the Python engine, in a Web Worker ----------------
+let worker = null, pending = null;
+const workerSrc = `
+let py = null;
+self.onmessage = async (e) => {
+  const m = e.data;
+  try {
+    if (m.type === 'init') { importScripts(m.url + 'pyodide.js'); py = await loadPyodide({ indexURL: m.url }); self.postMessage({ type:'ready', version: py.version }); return; }
+    if (m.type === 'code') { py.runPython(m.code); self.postMessage({ type:'ok' }); return; }
+    if (m.type === 'setup') { const n = py.globals.get('setup')(m.points, m.hidden, m.seed); self.postMessage({ type:'ok', n }); return; }
+    if (m.type === 'step') { const f = py.globals.get('train_step'); let r; for (let i=0;i<m.n;i++) r = f(m.lr, m.batch); self.postMessage({ type:'ok', res: r }); return; }
+  } catch (err) { self.postMessage({ type:'error', msg: String(err && err.message || err) }); }
+};`;
+let chain = Promise.resolve();
+function call(msg){ const p = chain.then(() => new Promise((res, rej) => { pending = {res, rej}; worker.postMessage(msg); })); chain = p.catch(()=>{}); return p; }  // one message at a time
+function startPython(){
+  return new Promise((resolve, reject) => {
+    try { worker = new Worker(URL.createObjectURL(new Blob([workerSrc], {type:'text/javascript'}))); } catch(e){ reject(e); return; }
+    const timer = setTimeout(() => reject(new Error('timeout')), 30000);
+    worker.onmessage = e => {
+      const m = e.data;
+      if(m.type==='ready'){ clearTimeout(timer); resolve(m.version); return; }
+      if(!pending && m.type==='error'){ clearTimeout(timer); reject(new Error(m.msg)); return; }
+      if(!pending) return; const p = pending; pending = null;
+      m.type==='error' ? p.rej(new Error(m.msg)) : p.res(m);
+    };
+    worker.onerror = e => { clearTimeout(timer); reject(e); };
+    worker.postMessage({type:'init', url: PYODIDE});
+  });
+}
+
+// ---------------- the same engine, ported to JS (fallback) ----------------
+const JS = (() => {
+  class V { constructor(d, p=[]){ this.data=d; this.grad=0; this.prev=p; this.bw=()=>{}; }
+    add(o){ o = o instanceof V ? o : new V(o); const out=new V(this.data+o.data,[this,o]); out.bw=()=>{ this.grad+=out.grad; o.grad+=out.grad; }; return out; }
+    mul(o){ o = o instanceof V ? o : new V(o); const out=new V(this.data*o.data,[this,o]); out.bw=()=>{ this.grad+=o.data*out.grad; o.grad+=this.data*out.grad; }; return out; }
+    relu(){ const out=new V(this.data>0?this.data:0,[this]); out.bw=()=>{ this.grad+=(out.data>0)*out.grad; }; return out; }
+    backward(){ const order=[], seen=new Set(); const build=v=>{ if(!seen.has(v)){ seen.add(v); v.prev.forEach(build); order.push(v);} }; build(this); this.grad=1; for(let i=order.length-1;i>=0;i--) order[i].bw(); } }
+  let layers, X, Y, R;
+  function setup(pts, h, seed){ R = rng(seed*7919+1); X = pts.map(p=>[p[0],p[1]]); Y = pts.map(p=>p[2]);
+    const sizes=[2,...h,1]; layers = [];
+    for(let i=0;i<sizes.length-1;i++) layers.push(Array.from({length:sizes[i+1]},()=>({w:Array.from({length:sizes[i]},()=>new V(R()*2-1)), b:new V(0), lin:i===sizes.length-2})));
+    return params().length; }
+  const params = () => layers.flatMap(L=>L.flatMap(n=>[...n.w, n.b]));
+  function model(x){ let a=x; for(const L of layers){ a = L.map(n=>{ let s=n.b; n.w.forEach((w,k)=>{ s=s.add(w.mul(a[k])); }); return n.lin?s:s.relu(); }); } return a[0]; }
+  function trainStep(lr, batch){
+    const idx = []; const all=[...X.keys()]; for(let i=0;i<Math.min(batch,X.length);i++){ const j=i+Math.floor(R()*(all.length-i)); [all[i],all[j]]=[all[j],all[i]]; idx.push(all[i]); }
+    const scores = idx.map(i=>model([new V(X[i][0]), new V(X[i][1])]));
+    let data = new V(0); scores.forEach((s,k)=>{ data = data.add(s.mul(-Y[idx[k]]).add(1).relu()); }); data = data.mul(1/idx.length);
+    let reg = new V(0); params().forEach(p=>{ reg = reg.add(p.mul(p)); });
+    const loss = data.add(reg.mul(1e-4));
+    params().forEach(p=>p.grad=0); loss.backward(); params().forEach(p=>p.data-=lr*p.grad);
+    const acc = scores.filter((s,k)=>(Y[idx[k]]>0)===(s.data>0)).length/idx.length;
+    return JSON.stringify({loss:loss.data, acc, weights: layers.map(L=>L.map(n=>[n.w.map(w=>w.data), n.b.data]))});
+  }
+  return {setup, trainStep};
+})();
+
+// ---------------- engine-agnostic API ----------------
+async function setupModel(){
+  step = 0; losses = []; weights = null;
+  const pj = JSON.stringify(points), hj = JSON.stringify(hidden), seed = Math.floor(Math.random()*1e6);
+  let n;
+  if(engine==='py'){ n = (await call({type:'setup', points:pj, hidden:hj, seed})).n; }
+  else n = JS.setup(points, hidden, seed);
+  $('sParams').textContent = n;
+  await doSteps(1, 0);   // a zero-lr step just to read the random starting weights
+  step = 0; losses = [];
+  render();
+}
+async function doSteps(n, rate){
+  let res;
+  if(engine==='py') res = (await call({type:'step', n, lr: rate, batch: 32})).res;
+  else { for(let i=0;i<n;i++) res = JS.trainStep(rate, 32); }
+  const r = JSON.parse(res); weights = r.weights; step += n; losses.push(r.loss);
+}
+
+let looping = false, resetting = false, resetPending = false;
+async function loop(){
+  if(looping) return; looping = true;
+  while(running){
+    if(resetting || busy){ await new Promise(r=>setTimeout(r,40)); continue; }
+    busy = true;
+    try { await doSteps(1, lr()); render(); }
+    catch(e){ showErr(e); running=false; setTrainBtn(); }
+    busy = false;
+    await new Promise(r=>requestAnimationFrame(r));
+  }
+  looping = false;
+}
+async function requestReset(){
+  if(resetPending) return; resetPending = true;
+  await new Promise(r=>setTimeout(r,0));            // let several clicks collapse into one reset
+  while(busy) await new Promise(r=>setTimeout(r,20));
+  resetting = true; busy = true;
+  try { await setupModel(); } catch(e){ showErr(e); }
+  busy = false; resetting = false; resetPending = false;
+  if(running) loop();
+}
+let lastStepMs = 0;
+
+// ---------------- drawing ----------------
+const fc = $('field'), fx = fc.getContext('2d');
+const off = document.createElement('canvas'), ox = off.getContext('2d'); const G = 72; off.width = off.height = G;
+const VIEW = 1.75;
+function toPx(v, S){ return (v/VIEW*0.5+0.5)*S; }
+function fromPx(p, S){ return (p/S-0.5)*2*VIEW; }
+function render(){
+  const dpr = Math.min(2, devicePixelRatio||1), S = fc.clientWidth;
+  if(fc.width !== Math.round(S*dpr)){ fc.width = fc.height = Math.round(S*dpr); }
+  fx.setTransform(dpr,0,0,dpr,0,0);
+  fx.fillStyle='#0c0d12'; fx.fillRect(0,0,S,S);
+  if(weights){
+    const img = ox.createImageData(G,G);
+    for(let j=0;j<G;j++) for(let i=0;i<G;i++){
+      const s = forward(fromPx(i+.5,G), fromPx(j+.5,G)), t = Math.tanh(s*1.2), k = (j*G+i)*4;
+      const c = t>0 ? [255,159,90] : [90,180,255], a = Math.abs(t);
+      img.data[k]=12+(c[0]-12)*a*.55; img.data[k+1]=13+(c[1]-13)*a*.55; img.data[k+2]=18+(c[2]-18)*a*.55; img.data[k+3]=255;
+    }
+    ox.putImageData(img,0,0);
+    fx.imageSmoothingEnabled = true; fx.drawImage(off,0,0,S,S);
+    // the decision line itself
+    fx.strokeStyle='rgba(255,255,255,.55)'; fx.lineWidth=1.2;
+    const C=90, cell=S/C, val=[]; for(let j=0;j<=C;j++){ val[j]=[]; for(let i=0;i<=C;i++) val[j][i]=forward(fromPx(i*cell,S), fromPx(j*cell,S)); }
+    fx.beginPath();
+    for(let j=0;j<C;j++) for(let i=0;i<C;i++){ const a=val[j][i],b=val[j][i+1],c=val[j+1][i+1],d=val[j+1][i]; const pts=[];
+      if((a>0)!==(b>0)) pts.push([i+a/(a-b), j]); if((b>0)!==(c>0)) pts.push([i+1, j+b/(b-c)]); if((d>0)!==(c>0)) pts.push([i+d/(d-c), j+1]); if((a>0)!==(d>0)) pts.push([i, j+a/(a-d)]);
+      if(pts.length>=2){ fx.moveTo(pts[0][0]*cell,pts[0][1]*cell); fx.lineTo(pts[1][0]*cell,pts[1][1]*cell); } }
+    fx.stroke();
+  }
+  // grid
+  fx.strokeStyle='rgba(255,255,255,.05)'; fx.lineWidth=1; for(let v=-1.5; v<=1.5; v+=0.5){ const p=toPx(v,S); fx.beginPath(); fx.moveTo(p,0); fx.lineTo(p,S); fx.moveTo(0,p); fx.lineTo(S,p); fx.stroke(); }
+  // points
+  let correct = 0;
+  for(const p of points){
+    const x=toPx(p[0],S), y=toPx(p[1],S), ok = weights ? (forward(p[0],p[1])>0)===(p[2]>0) : true; if(ok) correct++;
+    fx.fillStyle = p[2]>0 ? '#ff9f5a' : '#5ab4ff'; fx.beginPath(); fx.arc(x,y,5.5,0,7); fx.fill();
+    fx.lineWidth = ok?1.5:2.5; fx.strokeStyle = ok ? 'rgba(12,13,18,.9)' : '#ffffff'; fx.stroke();
+  }
+  $('sStep').textContent = step;
+  $('sLoss').textContent = losses.length ? losses[losses.length-1].toFixed(3) : '—';
+  $('sAcc').textContent = weights ? Math.round(100*correct/points.length)+'%' : '—';
+  drawLoss(); drawNet();
+}
+function drawLoss(){
+  const c=$('lossChart'), x=c.getContext('2d'), dpr=Math.min(2,devicePixelRatio||1), w=c.clientWidth, h=80;
+  c.width=w*dpr; c.height=h*dpr; x.setTransform(dpr,0,0,dpr,0,0); x.clearRect(0,0,w,h);
+  if(losses.length<2) return;
+  const sm=[]; let e=losses[0]; losses.forEach(l=>{ e=e*.85+l*.15; sm.push(e); });
+  const mx=Math.max(...sm.slice(0,Math.max(5,sm.length)))*1.05;
+  x.strokeStyle='#ffcf6b'; x.lineWidth=1.8; x.beginPath();
+  sm.forEach((l,i)=>{ const px=6+(w-12)*i/(sm.length-1), py=h-6-(h-12)*Math.min(1,l/mx); i?x.lineTo(px,py):x.moveTo(px,py); }); x.stroke();
+}
+function drawNet(){
+  const c=$('net'), x=c.getContext('2d'), dpr=Math.min(2,devicePixelRatio||1), w=c.clientWidth, h=190;
+  c.width=w*dpr; c.height=h*dpr; x.setTransform(dpr,0,0,dpr,0,0); x.clearRect(0,0,w,h);
+  if(!weights) return;
+  const sizes=[2, ...weights.map(L=>L.length)], cols=sizes.length;
+  const P = sizes.map((n,li)=>Array.from({length:n},(_,k)=>[ 26+(w-52)*li/(cols-1), h/2 + (k-(n-1)/2)*Math.min(22,(h-30)/Math.max(1,n-1)) ]));
+  let mx=1e-6; weights.forEach(L=>L.forEach(n=>n[0].forEach(v=>mx=Math.max(mx,Math.abs(v)))));
+  weights.forEach((L,li)=>L.forEach((n,j)=>n[0].forEach((v,k)=>{
+    const a=P[li][k], b=P[li+1][j], s=Math.abs(v)/mx; x.strokeStyle = v>0 ? `rgba(255,159,90,${.12+s*.8})` : `rgba(90,180,255,${.12+s*.8})`; x.lineWidth=.4+s*3;
+    x.beginPath(); x.moveTo(a[0],a[1]); x.lineTo(b[0],b[1]); x.stroke(); })));
+  P.forEach((col,li)=>col.forEach(p=>{ x.fillStyle='#22242e'; x.strokeStyle='rgba(255,255,255,.4)'; x.lineWidth=1.2; x.beginPath(); x.arc(p[0],p[1],li===0||li===cols-1?7:5,0,7); x.fill(); x.stroke(); }));
+  x.fillStyle='#9a98ab'; x.font='10px IBM Plex Mono'; x.textAlign='center';
+  x.fillText('x, y', P[0][0][0], h-6); x.fillText('guess', P[cols-1][0][0], h-6);
+}
+
+// ---------------- UI ----------------
+function setTrainBtn(){ $('train').textContent = running ? '❚❚ Pause' : '▶ Train'; $('train').classList.toggle('on', running); }
+function enable(){ ['train','stepOnce','reset'].forEach(id=>$(id).disabled=false); }
+function showErr(e){ $('err').textContent = String(e.message||e); $('codeBox').open = true; }
+$('train').onclick = () => { running = !running; setTrainBtn(); if(running) loop(); };
+$('stepOnce').onclick = async () => { if(busy) return; busy=true; try{ await doSteps(1, lr()); render(); }catch(e){showErr(e);} busy=false; };
+$('reset').onclick = () => requestReset();
+$('lr').oninput = () => $('lrv').textContent = lr().toFixed(2);
+function pick(groupId, attr, fn){ document.querySelectorAll('#'+groupId+' button').forEach(b=>b.onclick=async()=>{ document.querySelectorAll('#'+groupId+' button').forEach(o=>o.classList.toggle('on',o===b)); fn(b.getAttribute(attr)); if(engine) requestReset(); else render(); }); }
+pick('datasets','data-ds', ds => { points = makeData(ds); if(ds==='spiral' && hidden.length<2){ } });
+pick('sizes','data-h', h => { hidden = JSON.parse(h); });
+fc.addEventListener('contextmenu', e=>e.preventDefault());
+fc.addEventListener('pointerdown', e => { const b=fc.getBoundingClientRect(), S=b.width; points.push([fromPx(e.clientX-b.left,S), fromPx(e.clientY-b.top,S), (e.shiftKey||e.button===2)?-1:1]);
+  render(); if(engine) requestReset(); });   // new points: start a fresh brain on the new puzzle
+$('runCode').onclick = async () => {
+  $('err').textContent='';
+  if(engine!=='py'){ $('err').textContent='Editing needs the Python runtime, which could not load here. Open the GitHub Pages version to try it.'; return; }
+  while(busy) await new Promise(r=>setTimeout(r,20));
+  resetting = true; busy = true;
+  try { await call({type:'code', code: $('code').value}); await setupModel(); $('err').style.color='#8be38b'; $('err').textContent='✓ Your Python is running.'; setTimeout(()=>{$('err').textContent='';$('err').style.color='';},2500); }
+  catch(e){ $('err').style.color=''; showErr(e); }
+  busy = false; resetting = false; if(running) loop();
+};
+$('resetCode').onclick = () => { $('code').value = ORIGINAL_CODE; };
+addEventListener('resize', render);
+
+// ---------------- boot ----------------
+render();
+(async () => {
+  try {
+    const ver = await startPython();
+    await call({type:'code', code: ORIGINAL_CODE});
+    engine = 'py';
+    $('badge').className='badge ok'; $('badgeText').textContent = `Real Python ${ver ? '(Pyodide '+ver+')' : ''} is running in your browser`;
+  } catch(e){
+    if(worker) worker.terminate();
+    engine = 'js';
+    $('badge').className='badge js'; $('badgeText').textContent = 'Python could not load here, so this is the same engine ported to JavaScript';
+  }
+  await setupModel(); enable();
+  running = true; setTrainBtn(); loop();
+})();
+
+})();
+</script>
+</body>
+</html>

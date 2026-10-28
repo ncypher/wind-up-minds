@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Worm — Wind-Up Minds</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,800&family=IBM+Plex+Mono:wght@400;600&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root{ --bg:#0f1412; --ink:#e9f1ea; --muted:#94a89b; --panel:rgba(20,28,25,.9); --line:rgba(233,241,234,.13);
+         --exc:#ffcf6b; --inh:#7fb2ff; --warm:#ffcf6b; }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:Inter,system-ui,sans-serif}
+  body{display:grid;grid-template-columns:1fr 430px;height:100vh;overflow:hidden}
+  #stage{position:relative}
+  canvas#dish{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair;touch-action:none}
+  aside{border-left:1px solid var(--line);background:var(--panel);padding:16px 18px;overflow:auto}
+  h1{font-family:Fraunces,serif;font-weight:800;font-size:26px;margin:0 0 4px}
+  h1 small{display:block;font:600 11px "IBM Plex Mono",monospace;letter-spacing:2px;color:var(--warm);text-transform:uppercase;margin-bottom:6px}
+  p{margin:6px 0;font-size:13px;line-height:1.55;color:var(--muted)} p b{color:var(--ink)}
+  .row{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+  button{font:600 12px Inter,sans-serif;color:var(--ink);background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:999px;padding:7px 11px;cursor:pointer}
+  button:hover{background:rgba(255,255,255,.14)} button.on{background:var(--warm);color:#1b1510;border-color:var(--warm)}
+  svg#circuit{width:100%;height:auto;display:block;margin-top:6px}
+  .lbl{font:600 10px "IBM Plex Mono",monospace;fill:#cfdcd2}
+  .tier{font:600 9px "IBM Plex Mono",monospace;fill:#6f8577;letter-spacing:1.5px}
+  #state{font:600 12px "IBM Plex Mono",monospace;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,.05);margin-top:8px}
+  canvas#trace{width:100%;height:70px;display:block;margin-top:8px;border-radius:8px;background:rgba(0,0,0,.25)}
+  .legend{font:11px "IBM Plex Mono",monospace;color:var(--muted);display:flex;gap:14px;margin-top:6px}
+  .legend i{display:inline-block;width:14px;height:3px;vertical-align:3px;margin-right:5px}
+  .hint{position:absolute;left:14px;bottom:12px;font:12px "IBM Plex Mono",monospace;color:var(--muted);line-height:1.7;pointer-events:none}
+  .note{font-size:11.5px;border-top:1px solid var(--line);padding-top:10px;margin-top:12px}
+  a{color:var(--warm)}
+  @media (max-width:900px){ body{grid-template-columns:1fr;grid-template-rows:55vh auto;overflow:auto;height:auto} #stage{height:55vh} aside{border-left:0;border-top:1px solid var(--line)} }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="dish"></canvas>
+  <div class="hint">click empty agar to drop food<br>click the worm's head or tail to poke it</div>
+</div>
+<aside>
+  <h1><small>Wind-Up Minds · 02</small>The Worm</h1>
+  <p><i>C. elegans</i> has <b>302 neurons</b>, and its whole wiring diagram has been mapped since the 1980s. This toy runs <b>21 of the real, named ones</b>, using the same trick Eon Systems used for their fly: each neuron just adds up its inputs and <b>fires when it crosses a threshold</b>.</p>
+  <p>Nobody programmed "find food." When the smell gets weaker, ASER fires and AVA makes the worm back up and turn. When the smell gets stronger, AIY keeps AVB going forward. That's enough to find dinner.</p>
+  <div class="row">
+    <button id="pokeHead">Poke head</button>
+    <button id="pokeTail">Poke tail</button>
+    <button id="clearFood">Clear food</button>
+    <button id="pause">Pause</button>
+    <button id="slow">Slow-mo</button>
+  </div>
+  <div id="state">—</div>
+  <svg id="circuit" viewBox="0 0 400 330"></svg>
+  <div class="legend"><span><i style="background:var(--exc)"></i>excites</span><span><i style="background:var(--inh)"></i>inhibits</span><span>brightness = firing rate</span></div>
+  <canvas id="trace"></canvas>
+  <div class="legend"><span><i style="background:#8be38b"></i>AVB forward</span><span><i style="background:#ff6b5e"></i>AVA backward</span></div>
+  <p class="note">Honest label: this is a hand-wired <b>sketch</b> of the real chemotaxis and touch circuits (ASE, AIY/AIZ/AIB, ALM/AVM/PLM, AVA/AVB), not the full 302-neuron connectome. The synapses and weights are simplified so the behavior shows up. The full model lives at <a href="https://openworm.org" target="_blank" rel="noopener">OpenWorm</a>.</p>
+</aside>
+
+<script>
+(() => {
+// ---------------- the nervous system ----------------
+// tier: 0 sensory, 1 inter, 2 command, 3 motor
+const N = [
+  ['ASEL',0,'smell getting stronger'],['ASER',0,'smell getting weaker'],['AWAL',0,'smell, left side'],['AWAR',0,'smell, right side'],
+  ['ALM',0,'touch, front'],['AVM',0,'touch, front'],['PLM',0,'touch, back'],
+  ['AIY',1,'keep going'],['AIZ',1,'turn'],['AIB',1,'turn'],['AVD',1,'touch relay'],['PVC',1,'touch relay'],['RIA',1,'head steering'],
+  ['AVB',2,'FORWARD command'],['AVA',2,'BACKWARD command'],
+  ['SMDL',3,'head left'],['SMDR',3,'head right'],['VB',3,'forward muscles'],['DB',3,'forward muscles'],['VA',3,'backward muscles'],['DA',3,'backward muscles'],
+];
+const idx = {}; N.forEach((n,i)=>idx[n[0]]=i);
+// [pre, post, weight]  positive = excitatory, negative = inhibitory
+const S = [
+  ['ASEL','AIY',2.2],['ASER','AIB',2.4],['ASER','AIZ',1.8],['AIY','AIZ',-2.0],['AIY','AVB',1.2],
+  ['AIZ','AVA',1.8],['AIB','AVA',2.0],['AIB','AVB',-0.8],
+  ['ALM','AVD',3.0],['AVM','AVD',3.0],['AVD','AVA',4.0],['PLM','PVC',3.0],['PVC','AVB',3.0],
+  ['AWAL','RIA',1.0],['AWAR','RIA',1.0],['AWAL','SMDL',1.9],['AWAR','SMDR',1.9],['RIA','SMDL',0.5],['RIA','SMDR',0.5],['SMDL','SMDR',-1.2],['SMDR','SMDL',-1.2],
+  ['AVA','AVB',-3.2],['AVB','AVA',-2.2],
+  ['AVB','VB',2.6],['AVB','DB',2.6],['AVA','VA',2.6],['AVA','DA',2.6],['AVA','VB',-1.5],['AVA','DB',-1.5],
+].map(([a,b,w])=>[idx[a],idx[b],w]);
+const nN = N.length;
+const v = new Float32Array(nN), r = new Float32Array(nN), ext = new Float32Array(nN), refr = new Float32Array(nN), flash = new Float32Array(nN);
+const bias = new Float32Array(nN), adapt = new Float32Array(nN), gA = new Float32Array(nN);
+gA[idx.AVA]=2.2; gA[idx.ASER]=0.8; gA[idx.AIB]=0.8;   // fatigue: a reversal can't last forever
+bias[idx.AVB] = 0.95; bias[idx.AVA] = 0.42; bias[idx.ASEL]=0.3; bias[idx.ASER]=0.3; bias[idx.AIY]=0.35;
+const TAU_M = 0.03, TAU_R = 0.12, THR = 1.0, REF = 0.008;
+
+function neuralStep(dt){
+  const I = new Float32Array(nN);
+  for(let i=0;i<nN;i++) I[i] = bias[i] + ext[i] + (Math.random()-0.5)*2.4; // noise: real neurons are noisy
+  for(const [a,b,w] of S) I[b] += w * r[a];
+  for(let i=0;i<nN;i++){ adapt[i] += dt/1.2*(r[i]-adapt[i]); I[i] -= gA[i]*adapt[i]; }
+  for(let i=0;i<nN;i++){
+    if(refr[i]>0){ refr[i]-=dt; v[i]=0; }
+    else {
+      v[i] += dt/TAU_M * (-v[i] + I[i]*1.6);
+      if(v[i] > THR){ v[i]=0; refr[i]=REF; r[i] += 0.167; flash[i]=1; }   // spike!
+    }
+    r[i] -= dt/TAU_R * r[i];
+    flash[i] = Math.max(0, flash[i]-dt*12);
+  }
+}
+
+// ---------------- the dish ----------------
+const cv = document.getElementById('dish'), ctx = cv.getContext('2d');
+let W,H,DPR, dishR, cx, cy;
+function resize(){ const b=cv.getBoundingClientRect(); DPR=Math.min(2,devicePixelRatio||1); W=b.width; H=b.height; cv.width=W*DPR; cv.height=H*DPR; ctx.setTransform(DPR,0,0,DPR,0,0); dishR=Math.min(W,H)*0.46; cx=W/2; cy=H/2; }
+addEventListener('resize', resize); resize();
+
+let food = [];
+function conc(x,y){ let c=0; for(const f of food){ const d2=(x-f.x)**2+(y-f.y)**2; c += f.a*Math.exp(-d2/(2*f.s*f.s)) + 0.6*f.a*Math.exp(-d2/(2*36*f.s*f.s)); } return c; }  // sharp lawn + a broad diffused smell
+
+// ---------------- the body ----------------
+const SEG = 28, SP = 5.2;
+let body = [];
+function spawnWorm(){ body=[]; const th=Math.random()*6.28; for(let i=0;i<SEG;i++) body.push({x:cx-dishR*0.45+Math.cos(th)*-i*SP, y:cy+dishR*0.3+Math.sin(th)*-i*SP}); heading=th; }
+let heading=0, phase=0, turnLeft=0, wasBack=false, cFast=0, cSlow=0, poke={head:0,tail:0};
+let paused=false, slow=false, spont=0;
+
+function bodyStep(dt){
+  const head = body[0];
+  // --- senses ---
+  const c = conc(head.x, head.y);
+  cFast += (c-cFast)*dt/0.25; cSlow += (c-cSlow)*dt/1.6;
+  const dC = (cFast - cSlow) * 40;
+  ext[idx.ASEL] = Math.max(0, dC)*1.2;
+  ext[idx.ASER] = Math.max(0, -dC)*1.6;
+  const hd = Math.atan2(body[0].y-body[1].y, body[0].x-body[1].x);
+  const off=9, lx=head.x+Math.cos(hd-1.2)*off, ly=head.y+Math.sin(hd-1.2)*off, rx=head.x+Math.cos(hd+1.2)*off, ry=head.y+Math.sin(hd+1.2)*off;
+  const cl=conc(lx,ly), cr=conc(rx,ry);
+  ext[idx.AWAL] = Math.max(0,(cl-cr))*70; ext[idx.AWAR] = Math.max(0,(cr-cl))*70;
+  ext[idx.ALM] = ext[idx.AVM] = poke.head>0 ? 2.8 : 0; ext[idx.PLM] = poke.tail>0 ? 2.8 : 0;
+  poke.head-=dt; poke.tail-=dt;
+  if(Math.random() < dt*0.05) spont = 0.5; spont -= dt; ext[idx.AVA] = spont>0 ? 1.4 : 0;
+
+  // --- muscles ---
+  const fwd = (r[idx.VB]+r[idx.DB])/2, back=(r[idx.VA]+r[idx.DA])/2;
+  let speed = (fwd*1.25 - back*1.4) * 26;          // px/s
+  speed = Math.max(-38, Math.min(42, speed));
+  const goingBack = speed < -2;
+  if(wasBack && !goingBack){ turnLeft = (Math.random()<.5?-1:1)*(1.6+Math.random()*1.4); }  // the "omega turn" after a reversal
+  wasBack = goingBack;
+  const steer = (r[idx.SMDR]-r[idx.SMDL]) * 2.2;
+  phase += Math.abs(speed)*dt*0.16;
+  const wiggle = 0.55*Math.sin(phase);
+
+  if(!goingBack){
+    let t = Math.sign(turnLeft)*Math.min(Math.abs(turnLeft), 2.2*dt);
+    turnLeft -= t; heading += t + steer*dt;
+    const dir = heading + wiggle;
+    head.x += Math.cos(dir)*speed*dt; head.y += Math.sin(dir)*speed*dt;
+    // walls of the dish
+    const dx=head.x-cx, dy=head.y-cy, d=Math.hypot(dx,dy);
+    if(d>dishR-8){ head.x=cx+dx/d*(dishR-8); head.y=cy+dy/d*(dishR-8); heading += 0.9*dt*8*(Math.random()<.5?1:1); }
+    for(let i=1;i<SEG;i++){ const a=body[i-1], b=body[i]; const ex=b.x-a.x, ey=b.y-a.y, L=Math.hypot(ex,ey)||1; b.x=a.x+ex/L*SP; b.y=a.y+ey/L*SP; }
+  } else {
+    const tail = body[SEG-1], pre = body[SEG-2];
+    const tdir = Math.atan2(tail.y-pre.y, tail.x-pre.x) + wiggle*0.6;
+    tail.x += Math.cos(tdir)*(-speed)*dt; tail.y += Math.sin(tdir)*(-speed)*dt;
+    const dx=tail.x-cx, dy=tail.y-cy, d=Math.hypot(dx,dy); if(d>dishR-8){ tail.x=cx+dx/d*(dishR-8); tail.y=cy+dy/d*(dishR-8); }
+    for(let i=SEG-2;i>=0;i--){ const a=body[i+1], b=body[i]; const ex=b.x-a.x, ey=b.y-a.y, L=Math.hypot(ex,ey)||1; b.x=a.x+ex/L*SP; b.y=a.y+ey/L*SP; }
+    heading = Math.atan2(body[0].y-body[1].y, body[0].x-body[1].x);
+  }
+  return {speed, c};
+}
+
+// ---------------- drawing ----------------
+function drawDish(){
+  ctx.fillStyle='#0f1412'; ctx.fillRect(0,0,W,H);
+  const g=ctx.createRadialGradient(cx-dishR*.2,cy-dishR*.3,dishR*.1,cx,cy,dishR);
+  g.addColorStop(0,'#2e3a2c'); g.addColorStop(1,'#1c241c');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(cx,cy,dishR,0,7); ctx.fill();
+  ctx.strokeStyle='rgba(220,240,225,.25)'; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(cx,cy,dishR,0,7); ctx.stroke();
+  ctx.strokeStyle='rgba(220,240,225,.07)'; ctx.lineWidth=10; ctx.beginPath(); ctx.arc(cx,cy,dishR-8,0,7); ctx.stroke();
+  for(const f of food){
+    const fg=ctx.createRadialGradient(f.x,f.y,0,f.x,f.y,f.s*2.6);
+    fg.addColorStop(0,'rgba(196,232,120,.42)'); fg.addColorStop(.35,'rgba(170,215,100,.16)'); fg.addColorStop(1,'rgba(160,210,90,0)');
+    ctx.fillStyle=fg; ctx.beginPath(); ctx.arc(f.x,f.y,f.s*2.6,0,7); ctx.fill();
+    ctx.fillStyle='rgba(225,245,170,.55)';
+    for(let k=0;k<f.dots.length;k++){ const d=f.dots[k]; ctx.beginPath(); ctx.arc(f.x+d[0],f.y+d[1],d[2],0,7); ctx.fill(); }
+  }
+}
+function drawWorm(goingBack){
+  ctx.lineCap='round'; ctx.lineJoin='round';
+  for(let pass=0;pass<2;pass++){
+    ctx.beginPath(); ctx.moveTo(body[0].x,body[0].y);
+    for(let i=1;i<SEG;i++){ const a=body[i-1], b=body[i]; ctx.quadraticCurveTo(a.x,a.y,(a.x+b.x)/2,(a.y+b.y)/2); }
+    ctx.lineTo(body[SEG-1].x,body[SEG-1].y);
+    ctx.strokeStyle = pass===0 ? 'rgba(0,0,0,.35)' : '#e8dcc6'; ctx.lineWidth = pass===0 ? 11 : 7.5; ctx.stroke();
+  }
+  // gut
+  ctx.beginPath(); ctx.moveTo(body[3].x,body[3].y); for(let i=4;i<SEG-3;i++) ctx.lineTo(body[i].x,body[i].y);
+  ctx.strokeStyle='rgba(150,120,90,.45)'; ctx.lineWidth=2.4; ctx.stroke();
+  // head glow when sensing / touched
+  const h=body[0];
+  ctx.fillStyle = poke.head>0 ? 'rgba(255,107,94,.9)' : `rgba(255,207,107,${0.3+Math.min(1,r[idx.ASEL]+r[idx.ASER])*0.7})`;
+  ctx.beginPath(); ctx.arc(h.x,h.y,3.6,0,7); ctx.fill();
+  if(poke.tail>0){ const t=body[SEG-1]; ctx.fillStyle='rgba(255,107,94,.9)'; ctx.beginPath(); ctx.arc(t.x,t.y,3.4,0,7); ctx.fill(); }
+}
+
+// ---------------- circuit diagram ----------------
+const svg = document.getElementById('circuit');
+const tierY=[38,118,196,282], pos=[];
+const tiers=[[],[],[],[]]; N.forEach((n,i)=>tiers[n[1]].push(i));
+tiers.forEach((list,t)=>list.forEach((i,k)=>{ pos[i]=[ (k+0.5)*400/list.length, tierY[t] ]; }));
+let svgHtml = '';
+['SENSORY','INTERNEURONS','COMMAND','MOTOR'].forEach((t,i)=>svgHtml+=`<text class="tier" x="4" y="${tierY[i]-22}">${t}</text>`);
+S.forEach(([a,b,w],k)=>{
+  const [x1,y1]=pos[a],[x2,y2]=pos[b];
+  const curved = Math.abs(y1-y2)<2; // same-tier: arc it
+  const d = curved ? `M${x1},${y1} Q${(x1+x2)/2},${y1-(w<0?26:-26)} ${x2},${y2}` : `M${x1},${y1+12} L${x2},${y2-12}`;
+  svgHtml += `<path id="e${k}" d="${d}" fill="none" stroke="${w>0?'#ffcf6b':'#7fb2ff'}" stroke-width="${Math.abs(w)*0.55}" opacity=".18"/>`;
+});
+N.forEach((n,i)=>{ const [x,y]=pos[i];
+  svgHtml += `<g><title>${n[0]}: ${n[2]}</title><circle id="n${i}" cx="${x}" cy="${y}" r="12" fill="#1a231f" stroke="#40524a" stroke-width="1.5"/><text class="lbl" x="${x}" y="${y+25}" text-anchor="middle">${n[0]}</text></g>`; });
+svg.innerHTML = svgHtml;
+const nodeEls = N.map((_,i)=>document.getElementById('n'+i)), edgeEls = S.map((_,k)=>document.getElementById('e'+k));
+function drawCircuit(){
+  for(let i=0;i<nN;i++){
+    const a = Math.min(1, r[i]*0.9);
+    const col = N[i][0]==='AVA' ? [255,107,94] : N[i][0]==='AVB' ? [139,227,139] : [255,207,107];
+    nodeEls[i].setAttribute('fill', `rgba(${col[0]},${col[1]},${col[2]},${0.08+a*0.85})`);
+    nodeEls[i].setAttribute('r', 12 + flash[i]*3);
+    nodeEls[i].setAttribute('stroke', flash[i]>0.5 ? '#ffffff' : '#40524a');
+  }
+  S.forEach(([a],k)=>edgeEls[k].setAttribute('opacity', 0.12 + Math.min(1,r[a]*0.8)*0.7));
+}
+
+// ---------------- AVA / AVB trace ----------------
+const tc = document.getElementById('trace'), tx = tc.getContext('2d');
+const hist = []; function drawTrace(){
+  const w=tc.clientWidth, h=tc.clientHeight; if(tc.width!==w*DPR){ tc.width=w*DPR; tc.height=h*DPR; } tx.setTransform(DPR,0,0,DPR,0,0);
+  tx.clearRect(0,0,w,h);
+  [['b','#8be38b'],['a','#ff6b5e']].forEach(([k,c])=>{ tx.strokeStyle=c; tx.lineWidth=1.6; tx.beginPath();
+    hist.forEach((p,i)=>{ const x=w - (hist.length-1-i)*2, y=h-4-Math.min(1,p[k]/1.4)*(h-10); i?tx.lineTo(x,y):tx.moveTo(x,y); }); tx.stroke(); });
+}
+
+// ---------------- loop ----------------
+const stateEl = document.getElementById('state');
+let last=performance.now(), out={speed:0,c:0};
+function frame(now){
+  let dt=Math.min(0.05,(now-last)/1000); last=now; if(slow) dt*=0.25;
+  if(!paused){
+    const sub=Math.ceil(dt/0.002), h=dt/sub;
+    for(let s=0;s<sub;s++){ out = bodyStep(h); neuralStep(h); }
+    hist.push({a:r[idx.AVA], b:r[idx.AVB]}); if(hist.length>220) hist.shift();
+  }
+  drawDish(); drawWorm(out.speed<-2); drawCircuit(); drawTrace();
+  const mode = poke.head>0||poke.tail>0 ? '⚡ touched' : out.speed<-2 ? '↩ backing up (AVA)' : Math.abs(turnLeft)>0.2 ? '↻ turning' : '→ crawling forward (AVB)';
+  stateEl.textContent = `${mode}   ·   smell ${out.c.toFixed(2)}`;
+  stateEl.style.color = out.speed<-2 ? '#ff6b5e' : '#8be38b';
+  requestAnimationFrame(frame);
+}
+
+function addFood(x,y){ const s=36+Math.random()*26; food.push({x,y,s,a:1,dots:Array.from({length:26},()=>{const a=Math.random()*6.28, d=Math.random()*s*.9; return [Math.cos(a)*d,Math.sin(a)*d,0.8+Math.random()*1.6];})}); }
+function nearWorm(p){ const h=body[0], t=body[SEG-1]; if(Math.hypot(h.x-p.x,h.y-p.y)<20) return 'head'; if(Math.hypot(t.x-p.x,t.y-p.y)<20) return 'tail'; return body.some(b=>Math.hypot(b.x-p.x,b.y-p.y)<10)?'body':null; }
+cv.addEventListener('pointerdown', e=>{
+  const b=cv.getBoundingClientRect(), p={x:e.clientX-b.left, y:e.clientY-b.top};
+  const hit = nearWorm(p);
+  if(hit==='head') poke.head=0.45; else if(hit==='tail') poke.tail=0.45;
+  else if(!hit && Math.hypot(p.x-cx,p.y-cy)<dishR-10) addFood(p.x,p.y);
+});
+document.getElementById('pokeHead').onclick=()=>poke.head=0.45;
+document.getElementById('pokeTail').onclick=()=>poke.tail=0.45;
+document.getElementById('clearFood').onclick=()=>food=[];
+document.getElementById('pause').onclick=e=>{ paused=!paused; e.currentTarget.classList.toggle('on',paused); e.currentTarget.textContent=paused?'Play':'Pause'; };
+document.getElementById('slow').onclick=e=>{ slow=!slow; e.currentTarget.classList.toggle('on',slow); };
+
+
+spawnWorm(); addFood(cx+dishR*0.35, cy-dishR*0.25);
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

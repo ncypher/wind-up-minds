@@ -14,7 +14,7 @@
   body{display:grid;grid-template-columns:minmax(0,1fr) 440px;min-height:100vh}
   #left{position:relative;display:flex;align-items:center;justify-content:center;padding:18px}
   #field{width:min(100%, calc(100vh - 36px));aspect-ratio:1;border-radius:16px;box-shadow:0 0 0 1px var(--line);background:#0c0d12;touch-action:none;cursor:crosshair}
-  aside{background:var(--panel);border-left:1px solid var(--line);padding:16px 18px 30px;overflow:auto;max-height:100vh}
+  aside{background:var(--panel);border-left:1px solid var(--line);padding:60px 18px 30px;overflow:auto;max-height:100vh}
   h1{font-family:Fraunces,serif;font-weight:800;font-size:26px;margin:0 0 4px}
   h1 small{display:block;font:600 11px "IBM Plex Mono",monospace;letter-spacing:2px;color:var(--warm);text-transform:uppercase;margin-bottom:6px}
   p{margin:6px 0;font-size:13px;line-height:1.55;color:var(--muted)} p b{color:var(--ink)}
@@ -44,6 +44,16 @@
 </style>
 </head>
 <body>
+<nav id="wum-nav"><a href="https://ncypher.github.io/wind-up-minds/" class="home">← Wind-Up Minds</a><span class="sep"></span><a href="https://ncypher.github.io/wind-up-minds/braitenberg/">01 Vehicles</a><a href="https://ncypher.github.io/wind-up-minds/worm/">02 Worm</a><a href="https://ncypher.github.io/wind-up-minds/tiny-network/" class="cur">03 Network</a></nav>
+<style>
+#wum-nav{position:fixed;top:12px;right:12px;z-index:50;display:flex;align-items:center;gap:4px;padding:5px;border-radius:999px;background:rgba(20,18,16,.82);border:1px solid rgba(255,255,255,.13);backdrop-filter:blur(8px);font:600 12px Inter,system-ui,sans-serif}
+#wum-nav a{color:#e9e3d8;text-decoration:none;padding:6px 11px;border-radius:999px;white-space:nowrap}
+#wum-nav a:hover{background:rgba(255,255,255,.12)}
+#wum-nav a.cur{background:#ffcf6b;color:#1b1510}
+#wum-nav a.home{color:#ffcf6b}
+#wum-nav .sep{width:1px;height:16px;background:rgba(255,255,255,.15);margin:0 2px}
+@media (max-width:640px){#wum-nav{top:auto;bottom:10px;right:50%;transform:translateX(50%)} #wum-nav a{padding:5px 8px;font-size:11px}}
+</style>
 <div id="left">
   <canvas id="field"></canvas>
   <div class="hint">click to add an orange point · shift-click (or right-click) for blue</div>
